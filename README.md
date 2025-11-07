@@ -4,10 +4,11 @@
 - **Title:** Microbial and Plant Gene Expression Response to Naphthenic Acids Fractional Components  
 - **Author:** Julius Eyiuche Nweze  
 - **Date:** 2025-11-06  
+- **Email:** julipeale2001@gmail.com  
 
 ## Overview
-This repository contains a collection of R, Bash, and HMM scripts for identifying, mapping, and analyzing genes involved in naphthenic acid fractional components (NAFC) degradation, microbial functional pathways, and plant transcriptomic responses.  
-The project involves metatranscriptomic workflows, focusing on hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways contributing NAFC degradation.
+This repository contains a collection of R, Bash, and HMM scripts for active microbial community, identifying, mapping, and analyzing genes involved in naphthenic acid fractional components (NAFC) degradation, microbial functional pathways, and plant transcriptomic responses.  
+The project involves metatranscriptomic workflows, focusing on active microbial community analysis, hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways contributing NAFC degradation.
 
 ## Table of Contents
 1. [Setup](#setup)  
@@ -57,16 +58,16 @@ chmod +x *.sh
 ## Analysis Workflow
 
 ### Functional Gene Detection (HMM)
-Scripts such as `11a_NA_deg.sh`, `12a_CANT_hmm.sh`, and `14a_MCycDB.sh` perform HMM-based gene searches for hydrocarbon-degrading genes across metagenomic or transcriptomic datasets.
+Scripts such as `11a_NA_deg.sh`, `12a_CANT_hmm.sh`, `13a_HADEG.sh`,`15a_NCyc.sh`, `16a_Phospho_gene.sh`, `17a_Sulf.sh` and `14a_MCycDB.sh` perform HMM-based gene searches for hydrocarbon-degrading and nutrient cycling genes across metagenomic or transcriptomic datasets.
 
 ### Gene Mapping and Expression Analysis
-Scripts (`18a_Gene_mapping_TPM.sh`, `18b_generate_script_Gene_mapping_TPM.sh`) generate TPM-normalized gene expression matrices, followed by DESeq2-based differential expression analysis (`9_run_deseq2.sh`).
+Scripts (`18a_Gene_mapping_TPM.sh`, `18b_generate_script_Gene_mapping_TPM.sh`, `8_MT_bacteria.R` and `19b_MT_plant.R`) generate TPM-normalized gene expression matrices, followed by DESeq2-based differential expression analysis (`9_run_deseq2.sh`).
 
 ### Microbial and Plant DEG Analysis
-RMarkdown files like `10_DEGs_Naphthenic_acid.Rmd`, `19b_Plant_MT_bacteria.R.sh`, and `19d_DEGs_Plant_Naphthenic_acid.Rmd` analyze and visualize differentially expressed genes (DEGs) in microbial and plant systems under NA exposure.
+RMarkdown files like `10_DEGs_Naphthenic_acid.Rmd` and `19d_DEGs_Plant_Naphthenic_acid.Rmd` analyze and visualize differentially expressed genes (DEGs) in microbial and plant systems under NA exposure.
 
 ### Microbial Community Profiling
-Scripts such as `5_run_singlem_summarise_OTU.sh` and `7_Microbial_community.Rmd` process and analyze microbial community composition using SingleM and diversity metrics.
+Scripts such as `4_run_singlem_summarise_Profile.sh`, `5_run_singlem_summarise_OTU.sh`, `6_run_singlem_OTU_beta_diversity.sh` and `7_Microbial_community.Rmd` process and analyze microbial community composition using SingleM and diversity metrics.
 
 ## Scripts Overview
 | Script/File | Description |
@@ -106,7 +107,8 @@ Scripts such as `5_run_singlem_summarise_OTU.sh` and `7_Microbial_community.Rmd`
 | `19c_DEGs_Plant_Naphthenic_acid.Rmd` | Performs plant DEG analysis and visualization |
 
 ## Figures and Outputs
-All figures are generated automatically from RMarkdown scripts (`.Rmd`) and saved in the `Figures/` directory.  
+All figures are generated automatically from RMarkdown scripts (`.Rmd`) and saved in the `Figures/` directory.   
+The generated figures are modified using Inkscape, a free and open-source software vector graphics editor. 
 Each `.Rmd` script produces interactive plots, bar charts, and heatmaps summarizing gene abundance, taxonomy, and expression.
 
 ## Reproducibility
