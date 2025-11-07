@@ -1,0 +1,430 @@
+---
+title: "Differentially expressed genes for naphthenic acid degradation"
+author: "Nweze Julius"
+output: html_document
+date: "2024-09-17"
+output:
+  rmarkdown::html_document:
+    code_folding: show
+    dev: png
+    df_print: kable
+    fig_caption: yes
+    highlight: pygments
+    keep_md: yes
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+"devtools", # The tools required to efficiently manage other packages
+"data.table", # Optimized for fast reading of large files (fread)
+"readr", # For reading .csv files efficiently
+"tibble", # For tibble manipulations (data frames with extra features)
+"readODS", # Read ODS Files
+"tidyverse", # Helps to transform and better present data. 
+"kableExtra",
+"ggplot2", # For creating declarative and customizable graphics
+"magrittr", # Forward and backward “pipe”-like operator
+"dplyr", # A grammar of data manipulation
+"DESeq2", # For RNA-seq count data analysis and differential expression
+"ggnewscale") # To allow multiple fill scales
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c(
+  "wilkelab/ggtext", # Improved text rendering support for 'ggplot2' 
+  "ACCLAB/dabestr" # Data Analysis using Bootstrap-Coupled Estimation 
+)
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+
+**Load DEG data**
+```{r load data, cache = T}
+
+# Load the abundance data
+read_ods("feature_table_normalized_microbes.ods", sheet = "Microbes",  col_names = TRUE) ->
+Abs
+
+# Load the metadata
+read_ods("metadata_Root.ods", sheet = "metadata",  col_names = TRUE) ->
+metadata
+
+# Merge the two data
+Abs_metadata <- metadata %>% dplyr::right_join(Abs, by=c("SampleID"), multiple = "all", relationship = "many-to-many") 
+
+# Save in .csv file
+write_csv(Abs_metadata, "Root_microbial_abundance.csv")
+
+```
+
+
+**Plot microbial abundance in the root: Barplot**
+```{r bar plot data, cache = T}
+
+# For prokaryotes
+DEGs_taxa_microbes <- Abs_metadata %>%
+#  subset(Domain %in% c("Archaea", "Bacteria")) %>%
+  group_by(`Water type`, Time, Phylum) %>%
+  
+  # Calculate the mean abundance for each group
+  summarise(mean_abundance = mean(Abundance), .groups = "drop") %>%
+  
+  # Calculate percentage contribution of each Phylum to the total abundance
+  group_by(`Water type`, Time) %>%
+  mutate(percentage = mean_abundance / sum(mean_abundance) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Re-group by Phylum and recalculate mean abundance after classification
+  group_by(`Water type`, Time, Phylum) %>%
+  summarise(mean_abundance = sum(mean_abundance), .groups = "drop") %>%
+  
+  # Recalculate percentage based on the updated totals
+  group_by(`Water type`, Time) %>%
+  mutate(percentage = mean_abundance / sum(mean_abundance) * 100)
+
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_microbes %>%
+  group_by(Phylum) %>%
+  summarise(mean_abundance = sum(mean_abundance), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(mean_abundance)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_microbes1 <- DEGs_taxa_microbes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_microbes2 <- DEGs_taxa_microbes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_microbes2 %>% 
+ mutate(Time = factor(Time, levels = c("D-0", "D19", "D40", "D6", "D60"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Relative abundance (cpm)") +
+ 
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ `Water type`, ncol = 2) 
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+
+
+ggsave("Figures/Phylum_abundance_Exp3_contig.svg", width = 50, height = 40, units = "cm")
+
+
+
+```
+
+
+
+
+
+**Load DEG data from SingleM profile**
+```{r load data, cache = T}
+
+# Load the abundance data
+read_ods("Merged.with_extras.ods", sheet = "Merged.with_extras",  col_names = TRUE) ->
+singlem
+
+# Load the metadata
+read_ods("metadata_Root.ods", sheet = "metadata",  col_names = TRUE) ->
+metadata
+
+# Merge the two data
+Abs_metadata_singlem <- metadata %>% dplyr::right_join(singlem, by=c("SampleID"), multiple = "all", relationship = "many-to-many") 
+
+# Save in .csv file
+write_csv(Abs_metadata_singlem, "Root_microbial_abundance_singlem.csv")
+
+```
+
+
+**Plot microbial abundance in the root: Barplot**
+```{r bar plot data, cache = T}
+
+# At the phylum level
+phylum_colors <- c(Pseudomonadota = "#A52A2A", Bacteroidota = "#2E8B57", Planctomycetota = "#000080", Verrucomicrobiota = "#808000", Spirochaetota  = "#66CDAA", Acidobacteriota  = "#FFD39B", Myxococcota  = "#7FFF00", Actinomycetota  = "#8B4513", Bdellovibrionota  = "#2F4F4F", Bacillota  = "#FF1493", Cyanobacteriota  = "#8B8386", Armatimonadota = "#FFFF00", Gemmatimonadota = "#FF4500", Chloroflexota = "#8A2BE2")
+
+DEGs_taxa_microbes <- Abs_metadata_singlem %>%
+  subset(level %in% c("phylum")) %>%
+  group_by(`Water type`, Time, Phylum) %>%
+  
+  # Calculate the mean abundance for each group
+  summarise(mean_abundance = mean(relative_abundance), .groups = "drop") %>%
+  
+  # Calculate percentage contribution of each Phylum to the total abundance
+  group_by(`Water type`, Time) %>%
+  mutate(percentage = mean_abundance / sum(mean_abundance) * 100) 
+
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_microbes %>%
+  group_by(Phylum) %>%
+  summarise(mean_abundance = sum(mean_abundance), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(mean_abundance)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_microbes1 <- DEGs_taxa_microbes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_microbes2 <- DEGs_taxa_microbes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_microbes2 %>% 
+ mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Relative abundance (cpm)") +
+ 
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ `Water type`, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("SingleM/Meso_Exp3_Microbial_abundance_OSPW_RO_Phylum.svg", width = 50, height = 40, units = "cm")
+
+
+DEGs_taxa_microbes %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+arrange(.by_group = TRUE, desc(mean_abundance)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+# At the family level
+Family_colors = c(Burkholderiaceae = "#8B8B00", Flavobacteriaceae = "#39e789ff", Beijerinckiaceae = "#EE7942", Xanthobacteraceae = "#FF8C00", Chitinophagaceae = "#A52A2A", Rhizobiaceae  = "#CDCD00", Gemmataceae = "#00FFFF", Sphingomonadaceae = "#00FF00", Methylophilaceae = "#8B2252", JABEVK01 = "#00F5FF", Steroidobacteraceae = "#FF6347", Aestuariivirgaceae = "#0000FF", Cellvibrionaceae = "#4F94CD", Alteromonadaceae = "#D2B48C", Sphingobacteriaceae = "#551A8B", Azospirillaceae = "#FF4500", Spirosomataceae = "#FFA54F", Rhodocyclaceae = "#C0FF3E", Pseudomonadaceae = "#FFDEAD", Polyangiaceae = "#8A2BE2", Ancalomicrobiaceae = "#8B475D", Caulobacteraceae = "#FFFF00", Devosiaceae = "#FFB90F", Acidobacteriaceae = "#8B3626", Enterobacteriaceae  = "#00FF7F", Nostocaceae = "#473C8B", Holophagaceae = "#008B45",  `Others (< 2%)` = "#2F4F4F")
+
+
+DEGs_taxa_microbes <- Abs_metadata_singlem %>%
+  subset(level %in% c("family")) %>%
+  group_by(`Water type`, Time, Family) %>%
+  
+  # Calculate the mean abundance for each group
+  summarise(mean_abundance = mean(relative_abundance), .groups = "drop") %>%
+  
+  # Calculate percentage contribution of each Family to the total abundance
+  group_by(`Water type`, Time) %>%
+  mutate(percentage = mean_abundance / sum(mean_abundance) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Family = ifelse(percentage < 2, "Others (< 2%)", Family)) %>%
+  
+  # Re-group by Phylum and recalculate mean abundance after classification
+  group_by(`Water type`, Time, Family) %>%
+  summarise(mean_abundance = sum(mean_abundance), .groups = "drop") %>%
+  
+  # Recalculate percentage based on the updated totals
+  group_by(`Water type`, Time) %>%
+  mutate(percentage = mean_abundance / sum(mean_abundance) * 100)
+
+
+  
+  # Summarize the counts of genes for each Family at each level
+global_order <- DEGs_taxa_microbes %>%
+  group_by(Family) %>%
+  summarise(mean_abundance = sum(mean_abundance), .groups = "drop") %>%
+  # Reorder Family based on the number of DEGs within each Sample
+  arrange(desc(mean_abundance)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Family globally by ensuring unique Family levels
+DEGs_taxa_microbes1 <- DEGs_taxa_microbes %>%
+mutate(Family = factor(Family, levels = global_order$Family))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_microbes2 <- DEGs_taxa_microbes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_microbes2 %>% 
+ mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Family)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Relative abundance (cpm)") +
+ 
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ `Water type`, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = Family_colors)
+
+ggsave("SingleM/Meso_Exp3_Microbial_abundance_OSPW_RO_Family.svg", width = 50, height = 40, units = "cm")
+
+
+DEGs_taxa_microbes %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+arrange(.by_group = TRUE, desc(mean_abundance)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+# Beta diversity
+# Load the abundance at the EBD Level
+EBD <- read_ods("Merged.with_extras.ods", sheet = "BD", col_names = TRUE)
+
+# Convert the data to a matrix
+data_matrix <- as.matrix(EBD[,-1])
+rownames(data_matrix) <- EBD[[1]]
+
+# Fill NAs with 0 for the lower triangle matrix
+data_matrix[is.na(data_matrix)] <- 0
+
+# Melt the data for ggplot2
+data_melt <- reshape2::melt(data_matrix, varnames = c("Var1", "Var2"))
+
+ 
+# Create a heatmap
+data_melt %>%
+#  mutate(Var1 = factor(Var1, levels = c("RO-D-0", "RO-D-6", "RO-D-19", "RO-D-40", "RO-D-60", "OSPW-D-0", "OSPW-D-6", "OSPW-D-19", "OSPW-D-40", "OSPW-D-60"))) %>%
+#  mutate(Var2 = factor(Var2, levels = c("RO-D-0", "RO-D-6", "RO-D-19", "RO-D-40", "RO-D-60", "OSPW-D-0", "OSPW-D-6", "OSPW-D-19", "OSPW-D-40", "OSPW-D-60"))) %>%
+  ggplot(aes(Var1, Var2, fill = value)) +
+  geom_tile() +
+  geom_text(aes(label = round(value, 2)), size = 5, colour = "black") +  # Add values with rounded numbers
+  scale_fill_gradient(low = "white", high = "steelblue") +
+  labs(x = "Sample", y = "Sample", title = "Expressed beta diversity using Bray Curtis") +
+  theme_bw() +
+  theme(axis.text = element_text(size = 24, colour = "black"),
+        axis.ticks = element_line(size = 0.8),
+        axis.title = element_text(size = 24)) +
+  theme(legend.position = "right",
+        strip.text.x = element_text(size = 26),
+        legend.text = element_text(colour = "black", size = 24),
+        axis.title = element_text(size = 24),
+        legend.title = element_text(size = 24)) +
+  theme(axis.text.x = element_text(angle = 90, hjust = 1))
+
+
+ggsave("SingleM/Expressed_Beta_Diversity.svg",width = 30, height = 20, units = "cm")
+
+```

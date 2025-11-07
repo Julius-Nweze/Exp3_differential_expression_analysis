@@ -1,0 +1,2854 @@
+---
+title: "Differentially expressed genes for naphthenic acid degradation"
+author: "Nweze Julius"
+output: html_document
+date: "2024-09-17"
+output:
+  rmarkdown::html_document:
+    code_folding: show
+    dev: png
+    df_print: kable
+    fig_caption: yes
+    highlight: pygments
+    keep_md: yes
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+"devtools", # The tools required to efficiently manage other packages
+"data.table", # Optimized for fast reading of large files (fread)
+"readr", # For reading .csv files efficiently
+"tibble", # For tibble manipulations (data frames with extra features)
+"readODS", # Read ODS Files
+"kableExtra",
+"tidyverse", # Helps to transform and better present data. 
+"ggplot2", # For creating declarative and customizable graphics
+"magrittr", # Forward and backward “pipe”-like operator
+"dplyr", # A grammar of data manipulation
+"DESeq2", # For RNA-seq count data analysis and differential expression
+"ggnewscale") # To allow multiple fill scales
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c(
+  "wilkelab/ggtext", # Improved text rendering support for 'ggplot2' 
+  "ACCLAB/dabestr" # Data Analysis using Bootstrap-Coupled Estimation 
+)
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+
+**Load DEG data**
+```{r load data, cache = T}
+read_ods("Merged_degs.ods", sheet = "Merged_degs",  col_names = TRUE) ->
+DEGs
+```
+
+
+**Plot DEGs: Barplot**
+```{r bar plot data, cache = T}
+# Barplot of Up- and Downregulated Genes: Count the number of significant up- and downregulated genes
+# Count the number of significant up- and downregulated genes for each Time point
+regulated <- DEGs %>%
+mutate(Treatment = factor(Treatment, levels = c("OSPW", "RO", "OSPW_vs_RO_TI", "OSPW_vs_RO_at_each_Time"))) %>%
+group_by(Treatment, Time) %>%
+mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  group_by(Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop")
+
+# Plot the summary as a bar plot for OSPW
+regulated %>%
+subset(Treatment == "OSPW") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_OSPW.svg", width = 25, height = 30, units = "cm")
+
+
+
+# Plot the summary as a bar plot for RO
+regulated %>%
+subset(Treatment == "RO") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_RO.svg", width = 25, height = 30, units = "cm")
+
+
+# Plot the summary as a bar plot for RO
+regulated %>%
+subset(Treatment == "OSPW_vs_RO_TI") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_OSPW_vs_RO_TI.svg", width = 25, height = 30, units = "cm")
+
+
+# Plot the summary as a bar plot for RO
+regulated %>%
+subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_OSPW_vs_RO_at_each_Time.svg", width = 25, height = 30, units = "cm")
+```
+
+
+**Taxonomic assignment of DEGs**
+```{r taxa of DEGs, cache = T}
+# Load the DEGs taxa
+read_ods("annotations.ods", sheet = "annotations",  col_names = TRUE) ->
+Taxa
+
+# Exclude duplicate Gene_IDs
+#Taxa <- Taxa %>% distinct(Gene_ID, .keep_all = TRUE)
+
+# Merge
+DEGs_taxa <-  DEGs %>% dplyr::left_join(Taxa, by=c("Gene_ID"), multiple = "all", relationship = "many-to-many") 
+
+# Save in .csv file
+write_csv(DEGs_taxa, "DEGs_taxa.csv")
+```
+
+
+**Plot for OSPW**
+```{r Prokaryote taxa of DEGs, cache = T}
+# At phylum level
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900"
+)
+
+
+                             
+
+# For OSPW
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+ subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+ subset(Treatment == "OSPW") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Treatment, Time, and Regulation
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_OSPW.svg", width = 45, height = 35, units = "cm")
+
+# ggsave("Figures/Taxa_origins_DEGs_Phylum_microbes_OSPW.svg", width = 45, height = 35, units = "cm")
+
+DEGs_taxa_prokaryotes %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+# At Order level
+# Define custom colors for each Order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A50", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969")
+
+
+# For OSPW
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+  subset(Treatment == "OSPW") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(tax_order, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each tax_order by Treatment, Time, and Regulation
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # tax_orderify Phyla with less than 1% as "Others"
+  mutate(tax_order = ifelse(percentage < 2, "Others (< 2%)", tax_order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each tax_order at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(tax_order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder tax_order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder tax_order globally by ensuring unique tax_order levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(tax_order = factor(tax_order, levels = global_order$tax_order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = tax_order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Order_microbes_OSPW.svg", width = 45, height = 35, units = "cm")
+
+
+DEGs_taxa_prokaryotes2 %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+```
+
+
+**Plot for RO**
+```{r Prokaryote taxa of DEGs, cache = T}
+# At phylum level
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                    # Firebrick
+  "Nucleocytoviricota" = "#EEC900"
+)
+
+
+
+# For OSPW
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+ subset(Treatment == "RO") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Treatment, Time, and Regulation
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_RO.svg", width = 45, height = 35, units = "cm")
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_microbes_RO.svg", width = 45, height = 35, units = "cm")
+
+DEGs_taxa_prokaryotes2 %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+
+# At order level
+# Define custom colors for each order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A50", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969", Desulfobacterales = "#7FFFD4", Eustigmatales = "#FFEFDB", Myxococcales = "#EED5B7", Gemmatimonadales = "#D2691E", Bryobacterales = "#EE6A50", Bacillales = "#00FFFF", Streptomycetales = "#008B8B", `Unclassified Ascomycota` = "#FFB90F", `Unclassified Basidiomycota` = "#556B2F", Gemmatales = "#FF1493", Sphingobacteriales = "#1E90FF")
+
+                                                                 
+                                   
+
+# For RO
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+  subset(Treatment == "RO") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(tax_order, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each tax_order by Treatment, Time, and Regulation
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # tax_classify Phyla with less than 1% as "Others"
+  mutate(tax_order = ifelse(percentage < 2, "Others (< 2%)", tax_order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each tax_order at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(tax_order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder tax_order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder tax_order globally by ensuring unique tax_order levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(tax_order = factor(tax_order, levels = global_order$tax_order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = tax_order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in RO") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_order_microbes_RO.svg", width = 45, height = 35, units = "cm")
+
+DEGs_taxa_prokaryotes2 %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+```
+
+
+
+**Plot for OSPW_vs_RO_TI**
+```{r Prokaryote taxa of DEGs, cache = T}
+# At phylum level
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900"
+)
+
+                                       
+                   
+
+# For OSPW vs RO
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Treatment == "OSPW_vs_RO_TI") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Treatment, Time, and Regulation
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_OSPW_vs_RO_TI.svg", width = 45, height = 35, units = "cm")
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_microbes_OSPW_vs_RO_TI.svg", width = 45, height = 35, units = "cm")
+
+
+
+
+
+
+
+# At order level
+# Define custom colors for each order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A50", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969", Desulfobacterales = "#7FFFD4", Eustigmatales = "#FFEFDB", Myxococcales = "#EED5B7", Gemmatimonadales = "#D2691E", Bryobacterales = "#EE6A50", Bacillales = "#00FFFF", Streptomycetales = "#008B8B", `Unclassified Ascomycota` = "#FFB90F", `Unclassified Basidiomycota` = "#556B2F", Gemmatales = "#FF1493", Sphingobacteriales = "#1E90FF", Actinomycetia = "#FFD700", Verrucomicrobiales = "#8B1A1A", Chromatiales = "#1874CD", Saprolegniales = "#DAA520", Eustigmatophyceae = "#00FF00", Leotiomycetes = "#FFF68F", Sebacinales = "#FFB6C1", Holophagales = "#FF00FF", `Unclassified Acidobacteriota` = "#B03060")
+                                                                            
+
+         
+# For OSPW_vs_RO_TI
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+  subset(Treatment == "OSPW_vs_RO_TI") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(tax_order, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each tax_order by Treatment, Time, and Regulation
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # tax_classify Phyla with less than 1% as "Others"
+  mutate(tax_order = ifelse(percentage < 2, "Others (< 2%)", tax_order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each tax_order at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(tax_order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder tax_order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder tax_order globally by ensuring unique tax_order levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(tax_order = factor(tax_order, levels = global_order$tax_order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = tax_order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW_vs_RO_TI") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Order_microbes_OSPW_vs_RO_TI.svg", width = 45, height = 35, units = "cm")
+```
+
+
+
+
+**Plot for OSPW_vs_RO_TI at each time**
+```{r Prokaryote taxa of DEGs, cache = T}
+# At phylum level
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900",
+  "Cnidaria" = "#00FF00",
+  "Kitrinoviricota" = "#FFF68F",
+  "Negarnaviricota" = "#FFFFF0"
+)
+                                         
+# For OSPW vs RO
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+ subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Treatment, Time, and Regulation
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Phylum_OSPW_vs_RO_at_each_Time.svg", width = 45, height = 35, units = "cm")
+ggsave("Figures/Taxa_origins_DEGs_Phylum_microbes_OSPW_vs_RO_at_each_Time.svg", width = 45, height = 35, units = "cm")
+
+DEGs_taxa_prokaryotes2 %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+
+
+
+# At order level
+# Define custom colors for each order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A50", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969", Desulfobacterales = "#7FFFD4", Eustigmatales = "#FFEFDB", Myxococcales = "#EED5B7", Gemmatimonadales = "#D2691E", Bryobacterales = "#EE6A50", Bacillales = "#00FFFF", Streptomycetales = "#008B8B", `Unclassified Ascomycota` = "#FFB90F", `Unclassified Basidiomycota` = "#556B2F", Gemmatales = "#FF1493", Sphingobacteriales = "#1E90FF", Actinomycetia = "#FFD700", Verrucomicrobiales = "#8B1A1A", Chromatiales = "#1874CD", Saprolegniales = "#DAA520", Eustigmatophyceae = "#00FF00", Leotiomycetes = "#FFF68F", Sebacinales = "#FFB6C1", Holophagales = "#FF00FF", `Unclassified Acidobacteriota` = "#B03060", Pythiales = "#AB82FF", `Unclassified Acidobacteriota` = "#C0FF3E", Pleosporales = "#698B22", Nostocales = "#FFA500", `Unclassified Candidatus Bipolaricaulota` = "#CD3700", Xanthomonadales = "#FF4500" )
+                                                                           
+                     
+# For OSPW_vs_RO_at_each_Time
+DEGs_taxa_prokaryotes <- DEGs_taxa %>%
+ subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi", "Viruses", "Protists", "Unclassified organisms")) %>%
+  subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(tax_order, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each tax_order by Treatment, Time, and Regulation
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # tax_classify Phyla with less than 1% as "Others"
+  mutate(tax_order = ifelse(percentage < 2, "Others (< 2%)", tax_order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(tax_order, Treatment, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Treatment, Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each tax_order at each level
+global_order <- DEGs_taxa_prokaryotes %>%
+  group_by(tax_order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder tax_order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder tax_order globally by ensuring unique tax_order levels
+DEGs_taxa_prokaryotes1 <- DEGs_taxa_prokaryotes %>%
+mutate(tax_order = factor(tax_order, levels = global_order$tax_order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_prokaryotes2 <- DEGs_taxa_prokaryotes1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_prokaryotes2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = tax_order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW_vs_RO_TI") +
+  
+  # Customize the y-axis to display exact percentage values
+  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Treatment + Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+
+ggsave("Figures/Taxa_origins_DEGs_Order_microbes_OSPW_vs_RO_at_each_Time.svg", width = 45, height = 35, units = "cm")
+
+DEGs_taxa_prokaryotes2 %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+```
+
+
+
+**Pathways/Genes of the DEGs**
+```{r taxa of DEGs, cache = T}
+# Load the DEGs taxa
+read_ods("DEGs_taxa.ods", sheet = "Regulated",  col_names = TRUE) ->
+Naphthenic
+```
+
+
+**Pathways/Genes of the DEGs**
+```{r Pathway/genes of DEGs, cache = T}
+# Plot the pathways/genes
+
+# Plot
+colourmap <- c("Beta oxidation" = "#0000FF", "Oxidoreductases" = "#FF8B07", "Acyltransferases" = "#FFD700", "Desaturases" = "#800000", "Lipid transport and metabolism" = "#800080", "Glyoxylate cycle" = "#808000", "Citrate cycle" = "#000080", "Regulators" = "#ee82eeff", "Amino acid transport and metabolism" = "#FF1493", "Antimicrobial resistance" = "#EEDFCC", "Biofilm formation" = "#8B8378", "Butanoate metabolism" = "#7FFFD4", "Carbohydrate transport and metabolism" = "#76EEC6", "Cell division and chromosome partitioning" = "#66CDAA", "Cell envelope biogenesis, outer membrane" = "#458B74", "Cell motility and secretion" = "#F0FFFF", "Coenzyme metabolism" = "#C1CDCD", "Cytoskeleton" = "#EED5B7", "DNA replication, recombination, and repair" = "#20B2AA", "Defense mechanisms" = "#A52A2A", "Energy production and conversion" = "#8B2323", "Function unknown" = "#556B2F", "General function prediction only" = "#CAFF70", "Hydrogenases" = "#7FFF00", "Inorganic ion transport and metabolism" = "#458B00", "Intracellular trafficking and secretion" = "#D2691E", "Nitrogen metabolism" = "#00FFFF", "Nucleotide transport and metabolism" = "#008B8B", "Photosynthesis proteins" = "#B8860B", "Posttranslational modification, protein turnover, chaperones" = "#FF8C00", "Ribosome biogenesis" = "#2F4F4F", "Secondary metabolites biosynthesis, transport, and catabolism" = "#FAEBD7", "Signal transduction mechanisms" = "#8B0A50", "Sulfur metabolism" = "#1E90FF", "Transcription" = "#104E8B", "Transfer RNA biogenesis" = "#8B7500", "Translation, ribosomal structure and biogenesis" = "#00FF00", "Transporters" = "#CD5C5C", "Viral proteins" = "#F0E68C", "Vitamin biosynthesis" = "#8B8386", "Carbohydrate biosynthesis" = "#FF0000", "Lipid biosynthesis" = "#551A8B", "Lipopolysaccharide biosynthesis" = "#2E8B57", "Metal-binding proteins" = "#8B475D", "Methane metabolism" = "#00FF7F", "Vitamin metabolism" = "#473C8B", "Phosphorus metabolism" = "#CDC8B1")
+
+
+
+# For OSPW
+Naphthenic %>%
+  subset(Treatment == "OSPW") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  # Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Unclassified bacteria", "Ascomycota", "Oomycota"))
+  #  Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators"))
+  # Count DEGs for each Category, Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) ->
+  NA_OSPW
+
+
+  # Plot the tile plot with adjusted spacing
+NA_OSPW %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category)) + 
+    geom_bar(stat = "identity", position = "fill") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(#legend.position="none",
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_Pathway.svg", width = 65, height = 40, units = "cm") 
+
+
+NA_OSPW %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+
+
+# For RO
+Naphthenic %>%
+  subset(Treatment == "RO") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  # Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Unclassified bacteria", "Ascomycota", "Oomycota"))
+  #  Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators"))
+  # Count DEGs for each Category, Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) ->
+  NA_RO
+
+
+  # Plot the tile plot with adjusted spacing
+NA_RO %>%
+   mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category)) + 
+    geom_bar(stat = "identity", position = "fill") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in RO") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(#legend.position="none",
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_RO_Pathway.svg", width = 65, height = 40, units = "cm") 
+
+
+NA_RO %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+
+
+
+# For OSPW_vs_RO_TI
+Naphthenic %>%
+  subset(Treatment == "OSPW_vs_RO_TI") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  # Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Unclassified bacteria", "Ascomycota", "Oomycota"))
+  #  Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators"))
+  # Count DEGs for each Category, Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) ->
+  NA_OSPW_vs_RO_TI
+
+
+  # Plot the tile plot with adjusted spacing
+NA_OSPW_vs_RO_TI %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category)) + 
+    geom_bar(stat = "identity", position = "fill") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW_vs_RO_TI") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(legend.position="none",
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_TI_Pathway.svg", width = 25, height = 20, units = "cm") 
+
+
+
+# For OSPW_vs_RO_at_each_Time
+Naphthenic %>%
+  subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  # Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Unclassified bacteria", "Ascomycota", "Oomycota"))
+  #  Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators"))
+  # Count DEGs for each Category, Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) ->
+  NA_OSPW_vs_RO_at_each_Time
+
+
+  # Plot the tile plot with adjusted spacing
+NA_OSPW_vs_RO_at_each_Time %>%
+   mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category)) + 
+    geom_bar(stat = "identity", position = "fill") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time in OSPW_vs_RO_at_each_Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(#legend.position="none",
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_at_each_Time_Pathway.svg", width = 65, height = 40, units = "cm") 
+
+NA_OSPW_vs_RO_at_each_Time %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D6", "D19", "D40", "D60"))) %>%
+  arrange(.by_group = TRUE, desc(percentage)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F) 
+```
+
+
+# Heatmap of the upregulated DEGs
+```{r taxa of DEGs, cache = T}
+# Load NA-degrading data
+
+read_ods("DEGs_taxa.ods", sheet = "Regulated",  col_names = TRUE) ->
+Naphthenic
+
+
+Naphthenic_acid_NA <- Naphthenic %>% subset(Potential == "Yes")
+
+# Plot
+colourmap <- c("Beta oxidation" = "#20B2AA", "Oxidoreductases" = "#FF8B07", "Acyltransferases" = "#FFD700", "Desaturases" = "#800000", "Lipid transport and metabolism" = "#800080", "Glyoxylate cycle" = "#808000", "Citrate cycle" = "#000080", "Regulators" = "#ee82eeff", "Nitrogen metabolism" = "#00FFFF", "Sulfur metabolism" = "#1E90FF", "Phosphorus metabolism" = "#CDC8B1", "Methane metabolism" = "#00FF7F")
+
+
+
+phylum_colors <- c(
+  Actinomycetota = "#FF00FF",
+  Acidobacteriota = "#1f77b4",       # Blue
+  Bacteroidota = "#9467bd",          # Purple
+  Planctomycetota = "#c49c94",       # Light brown
+  `Unclassified bacteria` = "#aec7e8",# Light blue-gray
+  `Unclassified organisms` = "#bcbd22", # Yellow-green (reused from Nitrospirota)
+  Pseudomonadota = "#800000",        # Light pink
+  Oomycota = "#8B0A50",
+  Ascomycota = "#ffcc99",            # Peach
+Armatimonadota = "#2ca02c")
+
+
+# For OSPW
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW.svg", width = 25, height = 20, units = "cm") 
+
+
+# For RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "RO") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_RO.svg", width = 25, height = 30, units = "cm")
+
+
+
+
+# For OSPW vs RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW_vs_RO_TI") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+    mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_TI.svg", width = 25, height = 20, units = "cm") 
+
+
+
+# For OSPW vs RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_at_each_Time.svg", width = 25, height = 30, units = "cm")
+```
+
+
+
+
+**Taxonomic assignment of DEGs for D6 comparison in OSPW**
+```{r taxa of DEGs, cache = T}
+# Load the DEGs taxa
+read_ods("annotations.ods", sheet = "annotations",  col_names = TRUE) ->
+Taxa
+
+# Load DEGs 
+read_ods("DEGs_OSPW_RO_D6_comparison.ods", sheet = "Filtered_merged_degs_OSPW_D6",  col_names = TRUE) ->
+DEGs_D6
+
+# Exclude duplicate Gene_IDs
+#Taxa <- Taxa %>% distinct(Gene_ID, .keep_all = TRUE)
+
+# Merge
+DEGs_taxa_D6 <-  DEGs_D6 %>% dplyr::left_join(Taxa, by=c("Gene_ID"), multiple = "all", relationship = "many-to-many") 
+
+# Save in .csv file
+write_csv(DEGs_taxa_D6, "DEGs_taxa_D6_comparison.csv")
+
+# Load the categorised DEGs 
+read_ods("DEGs_taxa_D6_comparison.ods", sheet = "Regulated",  col_names = TRUE) ->
+DEGs_D6_cat
+```
+
+
+**Plot the number of DEGs for D6 comparison in OSPW**
+```{r taxa of DEGs, cache = T}
+######################################################## For OSPW
+
+# Number of DEGs
+DEGs_D6_cat %>%
+  subset(Water_type == "OSPW") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  group_by(Time, Regulation) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  ggplot(aes(x = Time, y = Count, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = Count), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+  
+ggsave("Figures/Number_NA_degrading_genes_OSPW_D6_comparison.svg", width = 25, height = 20, units = "cm") 
+
+
+
+
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900"
+)
+
+
+# Phylum contributing the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "OSPW") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Time, and Regulation
+  group_by(Phylum,  Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+  
+ggsave("Figures/Number_NA_degrading_genes_OSPW_D6_comparison_Phylum.svg", width = 25, height = 20, units = "cm") 
+
+
+
+
+# At order level
+# Define custom colors for each order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A10", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969", Desulfobacterales = "#7FFFD4", Eustigmatales = "#FFEFDB", Myxococcales = "#EED5B7", Gemmatimonadales = "#D2691E", Bryobacterales = "#EE6A50", Bacillales = "#00FFFF", Streptomycetales = "#008B8B", `Unclassified Ascomycota` = "#FFB90F", `Unclassified Basidiomycota` = "#556B2F", Gemmatales = "#FF1493", Sphingobacteriales = "#1E90FF", Actinomycetia = "#FFD700", Verrucomicrobiales = "#8B1A1A", Chromatiales = "#1874CD", Saprolegniales = "#DAA520", Eustigmatophyceae = "#00FF00", Leotiomycetes = "#FFF68F", Sebacinales = "#FFB6C1", Holophagales = "#FF00FF", `Unclassified Acidobacteriota` = "#B03060", Pythiales = "#AB82FF", `Unclassified Acidobacteriota` = "#C0FF3E", Pleosporales = "#698B22", Nostocales = "#FFA500", `Unclassified Candidatus Bipolaricaulota` = "#CD3700", Xanthomonadales = "#FF4500", Clostridiales = "#00CDCD", Lactobacillales = "#BCEE68", Diversisporales = "#CD6600", Leptospirales = "#6E8B3D", Pirellulales = "#2F4F4F", Rickettsiales = "#009ACD", Thermoanaerobacterales = "#00CD00", `unclassified Actinobacteria` = "#008B00", Thermotogales = "#F0E68C", `Unclassified Planctomycetota` = "#CD5555", `Unclassified candidate division WWE3` = "#EEDD82")
+
+
+                                                                
+
+# Order contributing the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "OSPW") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Order, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Order by Time, and Regulation
+  group_by(Order,  Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Order = ifelse(percentage < 2, "Others (< 2%)", Order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Order, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Order at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Order globally by ensuring unique Order levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Order = factor(Order, levels = global_order$Order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+  
+ggsave("Figures/Number_NA_degrading_genes_OSPW_D6_comparison_Order.svg", width = 25, height = 20, units = "cm") 
+
+
+
+# Defind the category colour
+colourmap <- c("Beta oxidation" = "#0000FF", "Oxidoreductases" = "#FF8B07", "Acyltransferases" = "#FFD700", "Desaturases" = "#800000", "Lipid transport and metabolism" = "#800080", "Glyoxylate cycle" = "#808000", "Citrate cycle" = "#000080", "Regulators" = "#ee82eeff", "Amino acid transport and metabolism" = "#FF1493", "Antimicrobial resistance" = "#EEDFCC", "Biofilm formation" = "#8B8378", "Butanoate metabolism" = "#7FFFD4", "Carbohydrate transport and metabolism" = "#76EEC6", "Cell division and chromosome partitioning" = "#66CDAA", "Cell envelope biogenesis, outer membrane" = "#458B74", "Cell motility and secretion" = "#F0FFFF", "Coenzyme metabolism" = "#C1CDCD", "Cytoskeleton" = "#EED5B7", "DNA replication, recombination, and repair" = "#20B2AA", "Defense mechanisms" = "#A52A2A", "Energy production and conversion" = "#8B2323", "Function unknown" = "#556B2F", "General function prediction only" = "#CAFF70", "Hydrogenases" = "#7FFF00", "Inorganic ion transport and metabolism" = "#458B00", "Intracellular trafficking and secretion" = "#D2691E", "Nitrogen metabolism" = "#00FFFF", "Nucleotide transport and metabolism" = "#008B8B", "Photosynthesis proteins" = "#B8860B", "Posttranslational modification, protein turnover, chaperones" = "#FF8C00", "Ribosome biogenesis" = "#2F4F4F", "Secondary metabolites biosynthesis, transport, and catabolism" = "#FAEBD7", "Signal transduction mechanisms" = "#8B0A50", "Sulfur metabolism" = "#1E90FF", "Transcription" = "#104E8B", "Transfer RNA biogenesis" = "#8B7500", "Translation, ribosomal structure and biogenesis" = "#00FF00", "Transporters" = "#CD5C5C", "Viral proteins" = "#F0E68C", "Vitamin biosynthesis" = "#8B8386", "Carbohydrate biosynthesis" = "#FF0000", "Lipid biosynthesis" = "#551A8B", "Lipopolysaccharide biosynthesis" = "#2E8B57", "Metal-binding proteins" = "#8B475D", "Methane metabolism" = "#00FF7F", "Vitamin metabolism" = "#473C8B", `Cell cycle control, cell division, chromosome partitioning` = "#00EE00", `Cell wall/membrane/envelope biogenesis` = "#8B3A3A", `Amino acid biosynthesis` = "#8B4513", `Phenylacetate degradation` = "#CD1076", `Chromatin structure and dynamics` = "#FFF0F5")
+
+
+                                                      
+
+# Category of the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "OSPW") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Category, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) 
+  
+  
+  
+  # Summarize the counts of genes for each Category at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Category based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Category globally by ensuring unique Category levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Category = factor(Category, levels = global_order$Category))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) + 
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+  
+ggsave("Figures/Number_NA_degrading_genes_OSPW_D6_comparison_Phylum_Category.svg", width = 60, height = 40, units = "cm") 
+
+
+
+# Heatmap of the identified DEGs with potential for NA degradation
+DEGs_D6_cat_NA <- DEGs_D6_cat %>% subset(Potential == "Yes")
+
+DEGs_D6_cat_NA %>%
+  subset(Water_type == "OSPW") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+   mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = Order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_heatmap_DEGs.svg", width = 25, height = 20, units = "cm")
+```
+
+
+
+
+**Plot the number of DEGs for D6 comparison in RO**
+```{r taxa of DEGs, cache = T}
+######################################################## For RO
+
+# Number of DEGs
+DEGs_D6_cat %>%
+  subset(Water_type == "RO") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+  group_by(Time, Regulation) %>%
+  summarise(Count = n(), .groups = "drop") %>%
+  ggplot(aes(x = Time, y = Count, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = Count), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+  
+ggsave("Figures/Number_NA_degrading_genes_RO_D6_comparison.svg", width = 25, height = 20, units = "cm") 
+
+
+
+
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Unclassified bacteria"  = "#7f7f7f",        # Light gray
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Preaxostyla" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900",
+  `Candidatus Jacksonbacteria` = "#8B1A1A",
+  `Candidatus Peregrinibacteria` = "#8B6914"
+)
+                                                                                                   
+
+# Phylum contributing the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "RO") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Time, and Regulation
+  group_by(Phylum,  Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Phylum = ifelse(percentage < 1, "Others (< 1%)", Phylum)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Phylum, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Phylum) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+  
+ggsave("Figures/Number_NA_degrading_genes_RO_D6_comparison_Phylum.svg", width = 25, height = 20, units = "cm") 
+
+
+
+
+# At order level
+# Define custom colors for each order
+order_colors <- c(Flavobacteriales = "#9467bd", Bacteroidales = "#8B0A50", Cytophagales  = "#1f77b4", Pseudomonadales = "#aec7e8", Helotiales = "#8c564b", Rhizobiales = "#2ca02c", Burkholderiales = "#dbdb8d", Caulobacterales = "#ff7f0e", Micromonosporales = "#17becf", Aquificales = "#c49c94", Tremellales = "#9edae5", Corynebacteriales = "#d62728", Glomerales = "#c5b0d5", Rhodospirillales = "#bcbd22", `Unclassified bacteria` = "#7FFF00", Nitrosomonadales = "#EEC900", Peronosporales = "#98df8a", Sphingomonadales = "#A52A2A", Bifidobacteriales = "#c7c7c7", Hypocreales = "#e377c2", Halobacteriales = "#ff1493", Cellvibrionales = "#0000FF", Chitinophagales = "#d8bfd8", `Unclassified Bacteroidota` = "#ee82ee", `Unclassified Armatimonadota` = "#458B00", `Gamma Proteobacteria` = "#00008B", `Beta Proteobacteria` = "#FF8C00", `Unclassified Verrucomicrobiota` = "#8B0A10", `Unclassified Pseudomonadota` = "#8B6914", `Unclassified fungi` = "#8B3A3A", `Others (< 2%)` = "#8B6969", Desulfobacterales = "#7FFFD4", Eustigmatales = "#FFEFDB", Myxococcales = "#EED5B7", Gemmatimonadales = "#D2691E", Bryobacterales = "#EE6A50", Bacillales = "#00FFFF", Streptomycetales = "#008B8B", `Unclassified Ascomycota` = "#FFB90F", `Unclassified Basidiomycota` = "#556B2F", Gemmatales = "#FF1493", Sphingobacteriales = "#1E90FF", Actinomycetia = "#FFD700", Verrucomicrobiales = "#8B1A1A", Chromatiales = "#1874CD", Saprolegniales = "#DAA520", Eustigmatophyceae = "#00FF00", Leotiomycetes = "#FFF68F", Sebacinales = "#FFB6C1", Holophagales = "#FF00FF", `Unclassified Acidobacteriota` = "#B03060", Pythiales = "#AB82FF", `Unclassified Acidobacteriota` = "#C0FF3E", Pleosporales = "#698B22", Nostocales = "#FFA500", `Unclassified Candidatus Bipolaricaulota` = "#CD3700", Xanthomonadales = "#FF4500", Clostridiales = "#00CDCD", Lactobacillales = "#BCEE68", Diversisporales = "#CD6600", Leptospirales = "#6E8B3D", Pirellulales = "#2F4F4F", Rickettsiales = "#009ACD", Thermoanaerobacterales = "#00CD00", `unclassified Actinobacteria` = "#008B00", Thermotogales = "#F0E68C", `Unclassified Planctomycetota` = "#CD5555", `Unclassified candidate division WWE3` = "#EEDD82", `Candidatus Peribacteria` = "#EEB4B4", `Unclassified Candidatus Jacksonbacteria Vaucheriales` = "#9FB6CD")
+
+# Order contributing the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "RO") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Order, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Order by Time, and Regulation
+  group_by(Order,  Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) %>%
+  
+  # Classify Phyla with less than 1% as "Others"
+  mutate(Order = ifelse(percentage < 2, "Others (< 2%)", Order)) %>%
+  
+  # Count again after classification to get the updated totals
+  group_by(Order, Time, Regulation) %>%
+  summarise(n = sum(n), .groups = "drop") %>%
+  
+  # Calculate the new percentages based on the updated counts
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100)
+  
+  
+  # Summarize the counts of genes for each Order at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Order) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Order based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Order globally by ensuring unique Order levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Order = factor(Order, levels = global_order$Order))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) +
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+  
+ggsave("Figures/Number_NA_degrading_genes_RO_D6_comparison_Order.svg", width = 25, height = 20, units = "cm") 
+
+
+
+# Defind the category colour
+colourmap <- c("Beta oxidation" = "#0000FF", "Oxidoreductases" = "#FF8B07", "Acyltransferases" = "#FFD700", "Desaturases" = "#800000", "Lipid transport and metabolism" = "#800080", "Glyoxylate cycle" = "#808000", "Citrate cycle" = "#000080", "Regulators" = "#ee82eeff", "Amino acid transport and metabolism" = "#FF1493", "Antimicrobial resistance" = "#EEDFCC", "Biofilm formation" = "#8B8378", "Butanoate metabolism" = "#7FFFD4", "Carbohydrate transport and metabolism" = "#76EEC6", "Cell division and chromosome partitioning" = "#66CDAA", "Cell envelope biogenesis, outer membrane" = "#458B74", "Cell motility and secretion" = "#F0FFFF", "Coenzyme transport and metabolism" = "#C1CDCD", "Cytoskeleton" = "#EED5B7", "DNA replication, recombination, and repair" = "#20B2AA", "Defense mechanisms" = "#A52A2A", "Energy production and conversion" = "#8B2323", "Function unknown" = "#556B2F", "General function prediction only" = "#CAFF70", "Hydrogenases" = "#7FFF00", "Inorganic ion transport and metabolism" = "#458B00", "Intracellular trafficking and secretion" = "#D2691E", "Nitrogen metabolism" = "#00FFFF", "Nucleotide transport and metabolism" = "#008B8B", "Photosynthesis proteins" = "#B8860B", "Posttranslational modification, protein turnover, chaperones" = "#FF8C00", "Ribosome biogenesis" = "#2F4F4F", "Secondary metabolites biosynthesis, transport, and catabolism" = "#FAEBD7", "Signal transduction mechanisms" = "#8B0A50", "Sulfur metabolism" = "#1E90FF", "Transcription" = "#104E8B", "Transfer RNA biogenesis" = "#8B7500", "Translation, ribosomal structure and biogenesis" = "#00FF00", "Transporters" = "#CD5C5C", "Viral proteins" = "#F0E68C", "Vitamin biosynthesis" = "#8B8386", "Carbohydrate biosynthesis" = "#FF0000", "Lipid biosynthesis" = "#551A8B", "Lipopolysaccharide biosynthesis" = "#2E8B57", "Metal-binding proteins" = "#8B475D", "Methane metabolism" = "#00FF7F", "Vitamin metabolism" = "#473C8B", `Cell cycle control, cell division, chromosome partitioning` = "#00EE00", `Cell wall/membrane/envelope biogenesis` = "#8B3A3A", `Amino acid biosynthesis` = "#8B4513", `Phenylacetate degradation` = "#CD1076", `Chromatin structure and dynamics` = "#FFF0F5")
+
+
+# Category of the DEGs
+DEGs_taxa_all <- DEGs_D6_cat %>%
+#  subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi")) %>%
+ subset(Water_type == "RO") %>%
+ 
+  # Create Regulation groups based on log2FoldChange
+  group_by(Category, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  
+  # Count DEGs for each Phylum by Time, and Regulation
+  group_by(Category, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  
+  # Calculate the percentage within each Treatment and Time
+  group_by(Time, Regulation) %>%
+  mutate(percentage = n / sum(n) * 100) 
+  
+  
+  
+  # Summarize the counts of genes for each Category at each level
+global_order <- DEGs_taxa_all %>%
+  group_by(Category) %>%
+  summarise(n = n(), .groups = "drop") %>%
+  # Reorder Category based on the number of DEGs within each Sample
+  arrange(desc(n)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Category globally by ensuring unique Category levels
+DEGs_taxa_all1 <- DEGs_taxa_all %>%
+mutate(Category = factor(Category, levels = global_order$Category))
+
+# Calculate the ordering within each Sample
+DEGs_taxa_all2 <- DEGs_taxa_all1 %>%
+  arrange(Time, desc(percentage)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using actual percentages
+DEGs_taxa_all2 %>% 
+ mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+ mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  ggplot(aes(x = Time, y = percentage, fill = Category, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Percentage number of DEGs (%)") +
+  ggtitle("Taxa origin of DEGs at different Time") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  
+  # Facet the plot by Treatment and Regulation
+  facet_wrap(~ Regulation, ncol = 2) + 
+  
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = colourmap)
+  
+ggsave("Figures/Number_NA_degrading_genes_RO_D6_comparison_Phylum_Category.svg", width = 60, height = 40, units = "cm") 
+
+
+
+
+
+# Heatmap of the identified DEGs with potential for NA degradation
+DEGs_D6_cat_NA <- DEGs_D6_cat %>% subset(Potential == "Yes")
+
+DEGs_D6_cat_NA %>%
+  subset(Water_type == "RO") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+   mutate(Time = factor(Time, levels = c("D19 vs D6", "D40 vs D6", "D60 vs D6"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = Order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_RO_heatmap_DEGs.svg", width = 25, height = 20, units = "cm")
+```
+
+
+
+**Replot NAFs removal**
+```{r taxa of NAFs, cache = T}
+read_ods("20240214_Exp3_SampleKey.ods", sheet = "Sheet1",  col_names = TRUE) ->
+data
+
+
+# Calculate means and standard deviations
+summary_data <- data %>%
+ filter(`Water Type` == "OSPW") %>%
+  mutate(Day = factor(Day, levels = c("Day 0", "Day 6", "Day 19", "Day 40", "Day 60", "Day 89"))) %>%
+  group_by(Treatment, `Water Type`, Day) %>%
+  summarize(mean_NAFCs = mean(`NAFCs (mg/L)`, na.rm = TRUE),
+            sd_NAFCs = sd(`NAFCs (mg/L)`, na.rm = TRUE),
+            n = n()) %>%
+  mutate(se_NAFCs = sd_NAFCs / sqrt(n)) %>%  # Calculate the standard error
+  ungroup()
+
+# Plotting the data with error ribbons
+ggplot(summary_data, aes(x = Day, y = mean_NAFCs, color = Treatment, group = interaction(Treatment, `Water Type`))) +
+  geom_point(size = 10) + 
+  geom_line(size = 6) +
+   theme_bw() +
+  geom_errorbar(aes(ymin = mean_NAFCs - se_NAFCs, ymax = mean_NAFCs + se_NAFCs), width = 0.2, size = 4) +
+  labs(title = "NAFCs Over Time by Treatment and Water Type",
+       x = "Day",
+       y = "NAFCs (mg/L)") +
+    theme(axis.text = element_text(size = 26, colour = "black"), 
+        axis.ticks = element_line(size = 0.8), 
+        axis.title = element_text(size = 30), 
+        legend.position = "right",
+        legend.text = element_text(colour = "black", size = 26), 
+        legend.title = element_text(size = 26))
+
+# Save
+ggsave("Figures/NAFCs_removal.svg", width = 45, height = 45, units = "cm")
+```

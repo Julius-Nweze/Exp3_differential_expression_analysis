@@ -1,0 +1,530 @@
+---
+title: "Differentially expressed genes for naphthenic acid degradation"
+author: "Nweze Julius"
+output: html_document
+date: "2024-09-17"
+output:
+  rmarkdown::html_document:
+    code_folding: show
+    dev: png
+    df_print: kable
+    fig_caption: yes
+    highlight: pygments
+    keep_md: yes
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+"devtools", # The tools required to efficiently manage other packages
+"data.table", # Optimized for fast reading of large files (fread)
+"readr", # For reading .csv files efficiently
+"tibble", # For tibble manipulations (data frames with extra features)
+"readODS", # Read ODS Files
+"kableExtra",
+"tidyverse", # Helps to transform and better present data. 
+"ggplot2", # For creating declarative and customizable graphics
+"magrittr", # Forward and backward “pipe”-like operator
+"dplyr", # A grammar of data manipulation
+"DESeq2", # For RNA-seq count data analysis and differential expression
+"ggnewscale") # To allow multiple fill scales
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c(
+  "wilkelab/ggtext", # Improved text rendering support for 'ggplot2' 
+  "ACCLAB/dabestr" # Data Analysis using Bootstrap-Coupled Estimation 
+)
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+
+**Load DEG data**
+```{r load data, cache = T}
+read_ods("Merged_degs.ods", sheet = "Merged_degs",  col_names = TRUE) ->
+DEGs
+```
+
+
+**Plot DEGs: Barplot**
+```{r bar plot data, cache = T}
+# Barplot of Up- and Downregulated Genes: Count the number of significant up- and downregulated genes
+# Count the number of significant up- and downregulated genes for each Time point
+regulated <- DEGs %>%
+mutate(Treatment = factor(Treatment, levels = c("OSPW", "RO", "OSPW_vs_RO_at_each_Time"))) %>%
+group_by(Treatment, Time) %>%
+mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  group_by(Treatment, Time, Regulation) %>%
+  summarise(n = n(), .groups = "drop")
+
+# Plot the summary as a bar plot for OSPW
+regulated %>%
+subset(Treatment == "OSPW") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_OSPW.svg", width = 25, height = 30, units = "cm")
+
+
+
+# Plot the summary as a bar plot for RO
+regulated %>%
+subset(Treatment == "RO") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_RO.svg", width = 25, height = 30, units = "cm")
+
+
+
+
+# Plot the summary as a bar plot for OSPW vs RO at each time point
+regulated %>%
+subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+mutate(Regulation = factor(Regulation, levels = c("Upregulated", "Downregulated"))) %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+ggplot(aes(x = Time, y = n, fill = Regulation)) +
+  geom_bar(stat = "identity", position = "dodge") +
+  xlab("Time") +
+  ylab("Number of Genes") +
+  ggtitle("Up- and Downregulated Genes by Time") +
+   geom_text(aes(label = n), position = position_dodge(width = 0.9), vjust = -0.5, size = 5) +  # Add text on top of the bars
+  xlab("Time") +
+  theme(
+    text = element_text(size = 16),       # Increase font size for text
+    axis.title = element_text(size = 16), # Increase font size for axis titles
+    axis.text = element_text(size = 14),  # Increase font size for axis labels
+    axis.text.x = element_text(size = 14, angle = 45),
+    plot.title = element_text(size = 18), # Increase font size for the title
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12)
+  ) 
+ 
+ggsave("Figures/Meso_Exp3_Number_Up_Down_DEGs_OSPW_vs_RO_at_each_Time.svg", width = 25, height = 30, units = "cm")
+```
+
+
+**Typha_latifolia DEGs**
+```{r taxa of DEGs, cache = T}
+# Load the DEGs taxa
+read_ods("gene_info_with_description.ods", sheet = "gene_info_with_description",  col_names = TRUE) ->
+gene
+
+
+# Merge
+DEGs_gene <-  DEGs %>% dplyr::left_join(gene, by=c("Gene"), multiple = "all", relationship = "many-to-many") 
+
+# Save in .csv file
+write_csv(DEGs_gene, "DEGs_gene_info.csv")
+```
+
+
+**Up-regulated DEGs**
+```{r taxa of DEGs, cache = T}
+# Bar plot
+DEGs_gene %>%
+  filter(log2FoldChange > 0, Treatment == "OSPW") %>%
+  arrange(desc(abs(log2FoldChange))) %>%
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D40 vs D-0", "D60 vs D-0"))) %>%
+  ggplot(aes(x = reorder(log2FoldChange, `Gene name`), y = log2FoldChange)) +
+  geom_segment(aes(xend = reorder(log2FoldChange, `Gene name`), y = 0, yend = log2FoldChange), color = "blue", linewidth = 3) +
+  geom_point(size = 5, color = "blue") +
+  coord_flip() +
+  facet_wrap(~ Time, ncol = 3) +
+  labs(
+    title = "Upregulated Genes in OSPW Water Type",
+    x = "Gene",
+    y = "Log2 Fold Change",
+    color = "Upregulated"
+  ) +
+  theme(
+    text = element_text(size = 16),
+    axis.title = element_text(size = 16),
+    axis.text = element_text(size = 14),
+    plot.title = element_text(size = 18, face = "bold"),
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12))
+
+
+ggsave("Figures/DEGs_name_OSPW.svg", width = 25, height = 25, units = "cm")
+```
+
+
+
+
+# Heatmap of the upregulated DEGs
+```{r taxa of DEGs, cache = T}
+# Load NA-degrading data
+
+read_ods("DEGs_taxa.ods", sheet = "Regulated",  col_names = TRUE) ->
+Naphthenic
+
+
+Naphthenic_acid_NA <- Naphthenic %>% subset(Potential == "Yes")
+
+# Plot
+colourmap <- c("Beta oxidation" = "#20B2AA", "Oxidoreductases" = "#FF8B07", "Acyltransferases" = "#FFD700", "Desaturases" = "#800000", "Lipid transport and metabolism" = "#800080", "Glyoxylate cycle" = "#808000", "Citrate cycle" = "#000080", "Regulators" = "#ee82eeff", "Nitrogen metabolism" = "#00FFFF", "Sulfur metabolism" = "#1E90FF", "Phosphorus metabolism" = "#CDC8B1", "Methane metabolism" = "#00FF7F")
+
+
+
+phylum_colors <- c(
+  Actinomycetota = "#FF00FF",
+  Acidobacteriota = "#1f77b4",       # Blue
+  Bacteroidota = "#9467bd",          # Purple
+  Planctomycetota = "#c49c94",       # Light brown
+  `Unclassified bacteria` = "#aec7e8",# Light blue-gray
+  `Unclassified organisms` = "#bcbd22", # Yellow-green (reused from Nitrospirota)
+  Pseudomonadota = "#800000",        # Light pink
+  Oomycota = "#8B0A50",
+  Ascomycota = "#ffcc99",            # Peach
+Armatimonadota = "#2ca02c")
+
+
+# For OSPW
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW.svg", width = 25, height = 20, units = "cm") 
+
+
+# For RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "RO") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_RO.svg", width = 25, height = 30, units = "cm")
+
+
+
+
+# For OSPW vs RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW_vs_RO_TI") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+    mutate(Time = factor(Time, levels = c("D6 vs D-0", "D19 vs D-0", "D40 vs D-0", "D60 vs D-0")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_TI.svg", width = 25, height = 20, units = "cm") 
+
+
+
+# For OSPW vs RO
+Naphthenic_acid_NA %>%
+  subset(Treatment == "OSPW_vs_RO_at_each_Time") %>%
+  # Create Regulation groups based on log2FoldChange
+  group_by(Phylum, Treatment, Time) %>%
+  mutate(Regulation = case_when(
+    log2FoldChange > 0 ~ "Upregulated",
+    log2FoldChange < 0 ~ "Downregulated",
+    TRUE ~ "Not significant"
+  )) %>%
+  ungroup() %>%  # Ungroup before further modifications to avoid unwanted grouping effects
+                 
+  # Ensure Treatment, Phylum, 'Time' and Pathway are factors with specified levels
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60")),
+         Phylum = factor(Phylum, levels = c("Pseudomonadota", "Bacteroidota", "Actinomycetota", "Planctomycetota", "Armatimonadota", "Unclassified bacteria", "Ascomycota", "Oomycota")),
+         Category = factor(Category, levels = c("Beta oxidation", "Oxidoreductases", "Acyltransferases", "Desaturases", "Lipid transport and metabolism", "Glyoxylate cycle", "Citrate cycle", "Regulators", "Nitrogen metabolism", "Sulfur metabolism", "Phosphorus metabolism", "Methane metabolism"))) %>%
+  # Arrange data by the factors explicitly
+  arrange(Category, Genes, Gene_ID) %>%
+  
+  # Create composite label for y-axis
+  mutate(composite_label = factor(paste(Genes, as.character(Gene_ID), sep = ": "),
+                                  levels = unique(paste(Genes, as.character(Gene_ID), sep = ": ")))) %>%
+  
+  # Plot the tile plot with adjusted spacing
+  ggplot(aes(x = Time, y = composite_label, fill = log2FoldChange)) + 
+  geom_tile(aes(width = 0.85, height = 0.85)) +  # Slightly smaller to add spacing
+  scale_fill_gradient2(low = "blue", high = "red", mid = "white", midpoint = 0, 
+                       limits = c(-30, 30), breaks = c(-30, -25, -20, -15, -10, -5, 0.0, 5, 10, 15, 20, 25, 30), 
+                       space = "Lab", name = "Log2 Fold Change") +
+  labs(x = "Time", y = "Gene") +
+#  theme_minimal() +
+  theme(axis.text.y = element_text(size = 15, angle = 0, hjust = 1)) +
+  
+  # Add the second fill aesthetic for Category
+  new_scale_fill() +
+  geom_tile(aes(y = composite_label, x = 0.3, fill = Category, width = 0.5, height = 1)) +  # Slightly reduced height
+  
+  # Manual color mapping for Category
+  scale_fill_manual(values = colourmap) +
+  
+  # Custom legend for Category
+  guides(fill = guide_legend(title = "Putative pathways/genes", title.position = "top")) +
+  
+  # Add a new scale fill for Phylum colors
+  new_scale_fill() +
+  
+  # Add tiles for Phylum color mapping with adjusted spacing
+  geom_tile(aes(y = composite_label, x = -0.15, fill = Phylum), width = 0.3, height = 0.85) +  # Adjust height for spacing
+  
+  # Manual color mapping for Phylum
+  scale_fill_manual(values = phylum_colors) +
+  
+  # Adjust size of the legend for Phylum
+  guides(fill = guide_legend(title = "Phylum", title.position = "top")) +
+  # Add a new scale fill for Phylum colors
+ 
+  # Add phylum numbers as text instead of fill
+  geom_text(aes(y = composite_label, x = -2.15, label = tax_order), size = 3, hjust = 0.01)
+
+ggsave("Figures/Heatmap_DEGS_Naphthenic_acid_OSPW_vs_RO_at_each_Time.svg", width = 25, height = 30, units = "cm")
+```
+
+
+
+

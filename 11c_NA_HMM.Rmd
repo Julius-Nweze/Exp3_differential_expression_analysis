@@ -1,0 +1,430 @@
+---
+title: "Differentially expressed genes for naphthenic acid degradation"
+author: "Nweze Julius"
+output: html_document
+date: "2024-09-17"
+output:
+  rmarkdown::html_document:
+    code_folding: show
+    dev: png
+    df_print: kable
+    fig_caption: yes
+    highlight: pygments
+    keep_md: yes
+    number_sections: no
+    theme: flatly
+    toc: yes
+    toc_depth: 5
+    toc_float: yes
+  html_document:
+    df_print: paged
+    toc: yes
+    toc_depth: '5'
+editor_options: 
+  chunk_output_type: console
+---
+
+```{r libraries, include=F}
+repo <- "http://cran.wu.ac.at"
+lib.loc <- Sys.getenv("R_LIBS_USER")
+
+update.packages(
+    lib.loc, 
+    repos = repo,
+    ask = FALSE
+)
+
+.cran_libs <- c(
+"devtools", # The tools required to efficiently manage other packages
+"data.table", # Optimized for fast reading of large files (fread)
+"readr", # For reading .csv files efficiently
+"tibble", # For tibble manipulations (data frames with extra features)
+"readODS", # Read ODS Files
+"kableExtra",
+"tidyverse", # Helps to transform and better present data. 
+"ggplot2", # For creating declarative and customizable graphics
+"readxl",
+"magrittr", # Forward and backward “pipe”-like operator
+"dplyr", # A grammar of data manipulation
+"DESeq2", # For RNA-seq count data analysis and differential expression
+"ggnewscale") # To allow multiple fill scales
+
+.inst <- .cran_libs %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(.cran_libs[!.inst],
+                    repos = repo,
+                    lib = lib.loc)
+}
+
+.bioc_libs <- c(
+  #"multtest", #Resampling-based multiple hypothesis testing
+)
+
+.bioc_inst <- .bioc_libs %in% installed.packages()
+if (any(!.bioc_inst)) {
+   if (!requireNamespace("BiocManager", quietly = TRUE))
+   install.packages("BiocManager")
+   BiocManager::install(ask = F, lib = lib.loc)  # upgrade bioC packages
+   BiocManager::install(.bioc_libs[!.bioc_inst], ask = F, lib = lib.loc)
+}
+
+.local_libs <- c()
+
+.inst <- names(.local_libs) %in% installed.packages()
+if (any(!.inst)) {
+   install.packages(paste0("~/R/", .local_libs[!.inst]) ,repos = NULL, type = "source", lib = lib.loc)
+}
+
+.github_libs <- c(
+  "wilkelab/ggtext", # Improved text rendering support for 'ggplot2' 
+  "ACCLAB/dabestr" # Data Analysis using Bootstrap-Coupled Estimation 
+)
+
+.github_lib_names <- stringr::str_replace(.github_libs, ".*/(.*)$", "\\1")
+
+.github_inst <- .github_lib_names %in% installed.packages()
+if (any(!.github_inst)) {
+  devtools::install_github(.github_libs[!.github_inst],
+                           lib = lib.loc,
+                           dependencies = TRUE)
+}
+
+# Load packages into session, and print package version
+(loaded.libs <- sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), require, character.only = TRUE))
+if (!all(loaded.libs)) {stop(paste("Package(s):", names(loaded.libs[loaded.libs == FALSE]), "could not be loaded"))}
+sapply(c(.cran_libs, .bioc_libs, names(.local_libs), .github_lib_names), packageVersion)
+```
+
+
+**Load metadata**
+```{r load data, cache = T}
+# Load the metadata
+metadata <- read_tsv("metadata.tsv")
+metadata_full <- read_xlsx("metadata_Root.xlsx")
+
+
+# Merge metadata
+metadata <-  metadata %>% dplyr::left_join(metadata_full, by=c("SampleID", "Time"), multiple = "all", relationship = "many-to-many")
+
+# Save merged metadata
+# write.csv(metadata, "Complete_metadata.csv")
+
+# load the abundance in cpm
+data <- read_tsv("merged_gene_abundance_cpm.tsv", name_repair = "minimal")
+
+# Reshape abundance from wide to long
+long_data <- pivot_longer(
+  data,
+  cols = -1,                # Keep the first column (likely gene names) as is
+  names_to = "Sample",       # Name for sample column
+  values_to = "CPM",
+  names_repair = "minimal"   # Name for CPM values
+)
+
+# Save the NA_abundance
+# write.csv(long_data, "long_data_cpm.csv")
+
+# Merge metadata and abundance
+NA_abundance <-  metadata %>% dplyr::left_join(long_data, by=c("Sample"), multiple = "all", relationship = "many-to-many")
+
+# Save the NA_abundance
+write.csv(NA_abundance, "NA_abundance.csv")
+
+# Load annotation
+read_ods("annotations.ods", sheet = "annotations",  col_names = TRUE) ->
+Taxa
+
+# Merge metadata, abundance and annotation
+NA_abundance_tax <-  NA_abundance %>% dplyr::left_join(Taxa, by=c("Gene_ID"), multiple = "all", relationship = "many-to-many")
+
+# Save the NA_abundance
+write.csv(NA_abundance_tax, "NA_abundance_tax.csv")
+
+
+# Load NA_genes_converted
+read_ods("NA_genes_converted.ods", sheet = "NA_genes",  col_names = TRUE) ->
+Na_gene
+
+# Merge metadata, abundance and annotation
+NA_abundance_tax_blast <-  NA_abundance_tax %>% dplyr::left_join(Na_gene, by=c("Gene_ID"), multiple = "all", relationship = "many-to-many") %>% drop_na(Gene) %>% subset(tax_kingdom %in% c("Archaea", "Bacteria", "Algae", "Fungi"))
+
+# Save the NA_abundance
+write.csv(NA_abundance_tax, "NA_abundance_tax_blast.csv")
+
+```
+
+
+**Plot abundance of NA-degrading genes in OSPW and RO**
+```{r bar plot data, cache = T}
+
+Ab_NA <- NA_abundance_tax_blast %>%
+  # You can uncomment the filter if you want OSPW only
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  
+  # Step 1: Average CPM per Water_type, Time, and Gene
+  group_by(Water_type, Time, Gene) %>%
+  mutate(cpm = mean(CPM)) %>%
+  
+  # Step 2: Average again per Gene_codes
+  group_by(Water_type, Time, Gene_codes) %>%
+  summarise(cpm = mean(cpm), .groups = "drop")
+
+Ab_NA %>%
+  mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  ggplot() +
+  theme_bw() + 
+  geom_linerange(aes(x = cpm, y = Gene_codes, xmin = 0, xmax = cpm), colour = "black", position = position_dodge(width = 1)) +
+  geom_point(aes(x = cpm, y = Gene_codes), colour = "#8B4500", size = 12, position = position_dodge(width = 1)) +
+  ylab("Genes") +  
+  xlab("Relative abundance (count per million)") +
+  theme(
+    axis.text = element_text(size = 30, colour = "black"), axis.text.x = element_text(size = 30, colour = "black", angle = 90, hjust = 0.5, vjust = 0.5), 
+    axis.ticks = element_line(size = 4), 
+    axis.title = element_text(size = 35),  
+    legend.title = element_text(size = 28), 
+    strip.text.x = element_text(size = 26), 
+    legend.text = element_text(colour = "black", size = 24)) +
+   facet_wrap(~ Water_type + Time, ncol = 10) +
+  xlim(0, 40)
+ 
+ggsave("Figures/Genes_NA_OSPW_RO.svg", width = 65, height = 40, units = "cm")
+
+Ab_NA%>%
+mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+group_by(Water_type, Time, Gene_codes) %>%
+arrange(.by_group = TRUE, desc(cpm)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+```
+
+
+
+**Plot phylum-level taxonomic origins of genes from OSPW and RO**
+```{r Taxa origins, cache = T}
+# At phylum level
+# Define custom colors for each Phylum
+phylum_colors <- c(
+  "Bacteroidota" = "#9467bd",
+  "Pseudomonadota" = "#8B0A50",        # Light pink
+  "Acidobacteriota" = "#1f77b4",       # Blue
+  "Unclassified bacteria" = "#aec7e8", # Light blue-gray
+  "Verrucomicrobiota" = "#dbdb8d",     # Light yellow
+  "Cyanobacteriota" = "#8c564b",       # Gray
+  "Actinomycetota" = "#ff7f0e",        # Orange
+  "Euryarchaeota" = "#bcbd22",         # Yellow-green
+  "Armatimonadota" = "#2ca02c",        # Green
+  "Gemmatimonadota" = "#17becf",       # Light blue
+  "Bacillota" = "#d62728",             # Red
+  "Planctomycetota" = "#c49c94",       # Light brown
+  "Aquificae" = "#c5b0d5",             # Pale purple
+  "Chloroflexota" = "#e377c2",         # Pink
+  "Nitrospirota" = "#A52A2A",          # Dark red
+  "Spirochaetota" = "#98df8a",         # Pale green
+  "Candidatus Saccharibacteria" = "#c7c7c7",  # Brown
+  "Thermotogae" = "#7FFF00",           # Bright green
+  "Candidatus Parcubacteria" = "#9edae5",      # Pale blue
+  "candidate division WWE3" = "#0000FF",       # Pure blue
+  "Candidatus Bipolaricaulota" = "#ff9896",    # Pale red
+  "Candidatus Rokubacteria" = "#ffbb78",       # Pale orange
+  "Unclassified archaea" = "#CDC9A5",          # Beige
+  "Others (< 1%)"  = "#030303",                # Black
+  "Unclassified viruses" = "#8b008b",          # Dark magenta
+  "Unclassified organisms" = "#dda0dd",        # Plum
+  "Endomyxa" = "#483d8b",                      # Dark slate blue
+  "Bigyra" = "#ff6347",                        # Tomato red
+  "Evosea" = "#40e0d0",                        # Turquoise
+  "Choanoflagellata" = "#4682b4",              # Steel blue
+  "Nematoda" = "#8b4513",                      # Saddle brown
+  "Arthropoda" = "#ff4500",                    # Orange red
+  "Chlorophyta" = "#32cd32",                   # Lime green
+  "Xanthophyceae" = "#ffd700",                 # Gold
+  "Bacillariophyta" = "#5f9ea0",               # Cadet blue
+  "Ascomycota" = "#ffb6c1",                    # Light pink
+  "Oomycota" = "#a0522d",                      # Sienna
+  "Mucoromycota" = "#d2691e",                  # Chocolate
+  "Unclassified fungi" = "#8a2be2",            # Blue violet
+  "Lenarviricota" = "#ff69b4",                 # Hot pink
+  "Streptophyta" = "#228b22",                  # Forest green
+  "Unclassified viridiplantae" = "#b0c4de",    # Light steel blue
+  "Basidiomycota" = "#ff1493",                 # Deep pink
+  "Chordata" = "#708090",                      # Slate gray
+  "Euglenozoa" = "#8fbc8f",                    # Dark sea green
+  "Eustigmatophyte" = "#d8bfd8",               # Thistle
+  "Pisuviricota" = "#ee82ee",                  # Violet
+  "Chytridiomycota" = "#b22222",                   # Firebrick
+  "Nucleocytoviricota" = "#EEC900"
+)
+
+                                                 
+
+Ab_NA <- NA_abundance_tax_blast %>%
+  # You can uncomment the filter if you want OSPW only
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  
+  # Step 1: Average CPM per Water_type, Time, and Gene to get the average of the replicates of each gene in each Water_type and Time
+   group_by(Water_type, Time, Gene) %>%
+  mutate(cpm = mean(CPM), .groups = "drop") %>%
+  
+  # Step 2: Average again per Gene_codes to get the average of the number of proteins used to search each gene in each Water_type and Time
+  group_by(Water_type, Time, Gene_codes) %>%
+  mutate(cpm = mean(cpm), .groups = "drop") %>%
+
+# Step 3: Sum again per Phylum to get the total sum for each Phylum in each Water_type and Time
+  group_by(Water_type, Time, Phylum) %>%
+  summarise(cpm = sum(cpm)/1000, .groups = "drop") 
+
+  # Summarize the counts of genes for each Phylum at each level
+global_order <- Ab_NA %>%
+  group_by(Phylum) %>%
+  summarise(sum_cpm = sum(cpm), .groups = "drop") %>%
+  # Reorder Phylum based on the number of DEGs within each Sample
+  arrange(desc(sum_cpm)) %>%
+  mutate(order = row_number())
+
+
+# Reorder Phylum globally by ensuring unique Phylum levels
+Ab_NA1 <- Ab_NA %>%
+mutate(Phylum = factor(Phylum, levels = global_order$Phylum))
+
+# Calculate the ordering within each Sample
+Ab_NA2 <- Ab_NA1 %>%
+  arrange(Time, desc(cpm)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using cpm
+Ab_NA2 %>% 
+ mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+ mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = cpm, fill = Phylum, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Relative abundance (count per million * 10^3)") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  # Facet the plot by Water_type
+  facet_wrap(~ Water_type, ncol = 2) +
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = phylum_colors)
+
+ggsave("Figures/Taxa_origins_NA_degraders_Phylum_OSPW_RO.svg", width = 45, height = 35, units = "cm")
+
+
+Ab_NA2 %>%
+mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+group_by(Water_type, Time, Phylum) %>%
+arrange(.by_group = TRUE, desc(cpm)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+
+
+# At Order level
+# Define custom colors for each Order
+order_colors <- c(Burkholderiales = "#dbdb8d", Rhizobiales = "#2ca02c", Caulobacterales = "#ff7f0e", `Unclassified Pseudomonadota` = "#8B6914", Helotiales = "#8c564b", `Unclassified bacteria` = "#7FFF00", Sphingomonadales = "#A52A2A", `Beta Proteobacteria` = "#FF8C00", Flavobacteriales = "#9467bd", Myxococcales = "#EED5B7", Micromonosporales = "#17becf", Peronosporales = "#98df8a", Cytophagales  = "#1f77b4", `Unclassified Bacteroidota` = "#ee82ee", Gemmatimonadales = "#D2691E", Gemmatales = "#FF1493", Pleosporales = "#8B0A50", `Unclassified archaea` = "#aec7e8", Pythiales = "#c49c94", `Alpha Proteobacteria` = "#9edae5", Holophagales = "#d62728", Rhodocyclales = "#bcbd22", Chaetothyriales = "#e377c2", Nostocales = "#0000FF", Sebacinales  = "#458B00", Oomycota = "#EEC900", Leotiomycetes = "#00008B", Saprolegniales = "#8B3A3A", Acidobacteriotales = "#8B6969", Alteromonadales = "#1E90FF", Chytridiales = "#c7c7c7")
+
+
+Ab_NA_order <- NA_abundance_tax_blast %>%
+  # You can uncomment the filter if you want OSPW only
+  mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  
+  # Step 1: Average CPM per Water_type, Time, and Gene to get the average of the replicates of each gene in each Water_type and Time
+  group_by(Water_type, Time, Gene) %>%
+  mutate(cpm = mean(CPM), .groups = "drop") %>%
+  
+  # Step 2: Average again per Gene_codes to get the average of the number of proteins used to search each gene in each Water_type and Time
+  group_by(Water_type, Time, Gene_codes) %>%
+  mutate(cpm = mean(cpm), .groups = "drop") %>%
+
+# Step 3: Sum again per tax_order to get the total sum for each tax_order in each Water_type and Time
+  group_by(Water_type, Time, tax_order) %>%
+  summarise(cpm = sum(cpm)/1000, .groups = "drop") 
+
+  # Summarize the counts of genes for each tax_order at each level
+global_order <- Ab_NA_order %>%
+  group_by(tax_order) %>%
+  summarise(sum_cpm = sum(cpm), .groups = "drop") %>%
+  # Reorder tax_order based on the number of DEGs within each Sample
+  arrange(desc(sum_cpm)) %>%
+  mutate(order = row_number())
+
+
+# Reorder tax_order globally by ensuring unique tax_order levels
+Ab_NA1_order <- Ab_NA_order %>%
+mutate(tax_order = factor(tax_order, levels = global_order$tax_order))
+
+# Calculate the ordering within each Sample
+Ab_NA2_order <- Ab_NA1_order %>%
+  arrange(Time, desc(cpm)) %>%
+  mutate(order = row_number())
+
+
+# Plot the data as a stacked bar plot using cpm
+Ab_NA2_order %>% 
+ mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+ mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+  ggplot(aes(x = Time, y = cpm, fill = tax_order, group = order)) +
+  geom_bar(stat = "identity", position = "stack") +  # Use 'stack' for stacked bars based on actual percentages
+  
+  # Add labels and title
+  xlab("Time") +
+  ylab("Relative abundance (count per million * 10^3)") +
+  
+  # Customize the y-axis to display exact percentage values
+#  scale_y_continuous(limits = c(0, 100)) +  # Set limits from 0 to 100 for percentages
+  
+  # Customize theme for better readability
+  theme(
+    text = element_text(size = 16),        # General text size
+    axis.title = element_text(size = 16),  # Axis titles font size
+    axis.text = element_text(size = 14),   # Axis labels font size
+    plot.title = element_text(size = 18),  # Plot title font size
+    legend.title = element_text(size = 14),
+    legend.text = element_text(size = 12),
+    
+    # Adjust margins and plot layout
+    plot.margin = margin(20, 20, 20, 20)
+  ) +
+  
+  # Set legend in two columns for better readability
+  guides(fill = guide_legend(ncol = 2)) +
+  # Facet the plot by Water_type
+  facet_wrap(~ Water_type, ncol = 2) +
+  # Apply custom colors using scale_fill_manual
+  scale_fill_manual(values = order_colors)
+
+ggsave("Figures/Taxa_origins_NA_degraders_Order_OSPW_RO.svg", width = 45, height = 35, units = "cm")
+
+
+Ab_NA2_order %>%
+mutate(Water_type = factor(Water_type, levels = c("RO", "OSPW"))) %>%
+mutate(Time = factor(Time, levels = c("D-0", "D6", "D19", "D40", "D60"))) %>%
+group_by(Water_type, Time, tax_order) %>%
+arrange(.by_group = TRUE, desc(cpm)) %>%
+kable(., digits = c(0, 1, 1, 1, 0, 1)) %>%
+kable_styling(bootstrap_options = c("striped", "hover", "condensed", "responsive"), full_width = F)
+```
+
+
