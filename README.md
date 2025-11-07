@@ -7,8 +7,8 @@
 - **Email:** julipeale2001@gmail.com  
 
 ## Overview
-This repository contains a collection of R, Bash, and HMM scripts for active microbial community, identifying, mapping, and analyzing genes involved in naphthenic acid fractional components (NAFC) degradation, microbial functional pathways, and plant transcriptomic responses.  
-The project involves metatranscriptomic workflows, focusing on active microbial community analysis, hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways contributing NAFC degradation.
+This repository contains a collection of R, Bash, and HMM scripts for analyzing active microbial communities, as well as for identifying, mapping, and characterizing genes involved in naphthenic acid fractional component (NAFC) degradation, microbial functional pathways, and plant transcriptomic responses.
+The project integrates metatranscriptomic workflows focusing on active microbial community profiling, hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways that contribute to NAFC degradation.
 
 ## Table of Contents
 1. [Setup](#setup)  
