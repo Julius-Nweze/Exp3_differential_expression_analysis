@@ -9,7 +9,7 @@
 
 ## Overview
 This repository contains a collection of R, Bash, and HMM scripts for analyzing active microbial communities, as well as for identifying, mapping, and characterizing genes involved in naphthenic acid fractional component (NAFC) degradation, microbial functional pathways, and plant transcriptomic responses.
-The project integrates metatranscriptomic workflows focusing on active microbial community profiling, hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways that contribute to NAFC degradation. [![DOI](https://zenodo.org/badge/1091796028.svg)](https://doi.org/10.5281/zenodo.17553524)
+The project integrates metatranscriptomic workflows focusing on active microbial community profiling, hydrocarbon-degrading genes, differential gene expression, and biogeochemical cycling pathways that contribute to NAFC degradation. https://zenodo.org/badge/1091796028.svg
 
 ## Table of Contents
 1. [Setup](#setup)  
