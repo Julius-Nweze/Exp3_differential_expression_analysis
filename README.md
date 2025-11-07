@@ -1,5 +1,9 @@
 # README.md
 
+.. image:: https://zenodo.org/badge/1091796028.svg
+  :target: https://doi.org/10.5281/zenodo.17553524
+
+
 ## Project Information
 - **Title:** Microbial and Plant Gene Expression Response to Naphthenic Acids Fractional Components  
 - **Author:** Julius Eyiuche Nweze  
