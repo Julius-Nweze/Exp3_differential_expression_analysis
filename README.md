@@ -2,7 +2,8 @@
 
 
 ## Project Information
-- **Title:** Microbial and Plant Gene Expression Response to Naphthenic Acids Fractional Components  
+- **Title:** Coordinated Plant and Microbial Transcriptional Responses to Oil-Sands Process-Affected Water
+- **Subtitle:** Insights from Typha latifolia root metatranscriptomes in constructed wetland mesocosms
 - **Author:** Julius Eyiuche Nweze  
 - **Date:** 2025-11-06  
 - **Email:** julipeale2001@gmail.com  
